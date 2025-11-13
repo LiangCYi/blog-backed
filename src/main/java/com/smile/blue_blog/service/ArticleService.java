@@ -7,10 +7,7 @@ import com.smile.blue_blog.entity.User;
 import com.smile.blue_blog.repository.ArticleRepository;
 import com.smile.blue_blog.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -24,12 +21,83 @@ public class ArticleService {
     private final ArticleRepository articleRepository;
     private final UserRepository userRepository;
 
-    // ========== 现有的查询方法 ==========
+    // ========== 新增：文章列表查询方法 ==========
 
     /**
-     * 获取所有唯一的标签
+     * 获取已发布文章列表（分页）
      */
-    public List<String> findAllTags() {
+    public Page<Article> findByStatus(Integer status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
+        return articleRepository.findByStatusOrderByCreateTimeDesc(status, pageable);
+    }
+
+    /**
+     * 根据分类获取已发布文章列表（分页）
+     */
+    public Page<Article> findByCategoryAndStatus(String category, Integer status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
+        return articleRepository.findByCategoryAndStatusOrderByCreateTimeDesc(category, status, pageable);
+    }
+
+    /**
+     * 根据标签获取已发布文章列表（分页）
+     */
+    public Page<Article> findByTagAndStatus(String tag, Integer status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
+        Page<Article> articles = articleRepository.findByStatusOrderByCreateTimeDesc(status, pageable);
+
+        // 过滤标签
+        List<Article> filteredArticles = articles.getContent().stream()
+                .filter(article -> article.getTags() != null && article.getTags().contains(tag))
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(filteredArticles, pageable, filteredArticles.size());
+    }
+
+    /**
+     * 根据分类和标签获取已发布文章列表（分页）
+     */
+    public Page<Article> findByCategoryAndTagAndStatus(String category, String tag, Integer status, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
+        Page<Article> articles = articleRepository.findByCategoryAndStatusOrderByCreateTimeDesc(category, status, pageable);
+
+        // 过滤标签
+        List<Article> filteredArticles = articles.getContent().stream()
+                .filter(article -> article.getTags() != null && article.getTags().contains(tag))
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(filteredArticles, pageable, filteredArticles.size());
+    }
+
+    // ========== 安全增强：公开接口专用方法 ==========
+
+    /**
+     * 获取已发布文章详情（公开接口使用，只返回已发布文章）
+     */
+    public Article getPublishedArticleDetail(Long id) {
+        return articleRepository.findByIdAndStatus(id, 1)
+                .orElseThrow(() -> new RuntimeException("文章不存在或未发布"));
+    }
+
+    /**
+     * 获取作者文章详情（私有接口使用，可查看草稿，验证权限）
+     */
+    public Article getAuthorArticleDetail(Long id, Long authorId) {
+        Article article = articleRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("文章不存在"));
+
+        // 验证文章所有权
+        if (!article.getAuthor().getId().equals(authorId)) {
+            throw new RuntimeException("无权查看此文章");
+        }
+
+        return article;
+    }
+
+    /**
+     * 获取已发布文章的标签（公开接口使用）
+     */
+    public List<String> findPublishedTags() {
         List<Article> articles = articleRepository.findByStatusOrderByCreateTimeDesc(1);
 
         return articles.stream()
@@ -44,15 +112,77 @@ public class ArticleService {
     }
 
     /**
-     * 获取所有分类
+     * 获取已发布文章的分类（公开接口使用）
      */
-    public List<String> findAllCategories() {
-        // 使用 Repository 的专用方法
+    public List<String> findPublishedCategories() {
         return articleRepository.findAllActiveCategories();
     }
 
     /**
-     * 根据标签查询文章
+     * 获取指定分类下已发布文章的标签（公开接口使用）
+     */
+    public List<String> findPublishedTagsByCategory(String category) {
+        List<Article> articles = articleRepository.findByCategoryAndStatusOrderByCreateTimeDesc(category, 1);
+
+        return articles.stream()
+                .map(Article::getTags)
+                .filter(tags -> tags != null && !tags.trim().isEmpty())
+                .flatMap(tags -> Arrays.stream(tags.split("\\s*,\\s*")))
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取已发布的推荐文章（公开接口使用）
+     */
+    public List<Article> getPublishedRecommendedArticles() {
+        return articleRepository.findByIsRecommendedTrueAndStatusOrderByCreateTimeDesc(1);
+    }
+
+    /**
+     * 获取已发布的置顶文章（公开接口使用）
+     */
+    public List<Article> getPublishedTopArticles() {
+        return articleRepository.findByIsTopTrueAndStatusOrderByCreateTimeDesc(1);
+    }
+
+    /**
+     * 获取已发布的热门文章（公开接口使用）
+     */
+    public Page<Article> getPublishedPopularArticles(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return articleRepository.findByStatusOrderByViewCountDesc(1, pageable);
+    }
+
+    /**
+     * 搜索已发布文章（公开接口使用，强制状态为1）
+     */
+    public Page<Article> searchPublishedArticles(String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
+        return articleRepository.searchArticles(keyword, 1, pageable);
+    }
+
+    // ========== 现有的查询方法（保持兼容性） ==========
+
+    /**
+     * 获取所有唯一的标签（兼容旧接口）
+     */
+    public List<String> findAllTags() {
+        return findPublishedTags(); // 默认只返回已发布文章的标签
+    }
+
+    /**
+     * 获取所有分类（兼容旧接口）
+     */
+    public List<String> findAllCategories() {
+        return findPublishedCategories(); // 默认只返回已发布文章的分类
+    }
+
+    /**
+     * 根据标签查询文章（兼容旧接口）
      */
     public List<Article> findByTagAndStatus(String tag, Integer status) {
         List<Article> articles = articleRepository.findByStatusOrderByCreateTimeDesc(status);
@@ -64,7 +194,7 @@ public class ArticleService {
     }
 
     /**
-     * 根据分类和标签查询文章
+     * 根据分类和标签查询文章（兼容旧接口）
      */
     public List<Article> findByCategoryAndTagAndStatus(String category, String tag, Integer status) {
         List<Article> articles = articleRepository.findByCategoryAndStatusOrderByCreateTimeDesc(category, status);
@@ -76,8 +206,31 @@ public class ArticleService {
     }
 
     /**
-     * 统计相关方法
+     * 获取某个分类下的所有标签（兼容旧接口）
      */
+    public List<String> findTagsByCategory(String category) {
+        return findPublishedTagsByCategory(category); // 默认只返回已发布文章的标签
+    }
+
+    /**
+     * 获取作者的所有标签（私有接口使用）
+     */
+    public List<String> findTagsByAuthor(Long authorId) {
+        List<Article> articles = articleRepository.findByAuthorIdOrderByCreateTimeDesc(authorId);
+
+        return articles.stream()
+                .map(Article::getTags)
+                .filter(tags -> tags != null && !tags.trim().isEmpty())
+                .flatMap(tags -> Arrays.stream(tags.split("\\s*,\\s*")))
+                .map(String::trim)
+                .filter(tag -> !tag.isEmpty())
+                .distinct()
+                .sorted()
+                .collect(Collectors.toList());
+    }
+
+    // ========== 统计相关方法 ==========
+
     public long countByStatus(Integer status) {
         return articleRepository.countByStatus(status);
     }
@@ -102,41 +255,7 @@ public class ArticleService {
                 .count();
     }
 
-    /**
-     * 获取某个分类下的所有标签
-     */
-    public List<String> findTagsByCategory(String category) {
-        List<Article> articles = articleRepository.findByCategoryAndStatusOrderByCreateTimeDesc(category, 1);
-
-        return articles.stream()
-                .map(Article::getTags)
-                .filter(tags -> tags != null && !tags.trim().isEmpty())
-                .flatMap(tags -> Arrays.stream(tags.split("\\s*,\\s*")))
-                .map(String::trim)
-                .filter(tag -> !tag.isEmpty())
-                .distinct()
-                .sorted()
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * 获取作者的所有标签
-     */
-    public List<String> findTagsByAuthor(Long authorId) {
-        List<Article> articles = articleRepository.findByAuthorIdOrderByCreateTimeDesc(authorId);
-
-        return articles.stream()
-                .map(Article::getTags)
-                .filter(tags -> tags != null && !tags.trim().isEmpty())
-                .flatMap(tags -> Arrays.stream(tags.split("\\s*,\\s*")))
-                .map(String::trim)
-                .filter(tag -> !tag.isEmpty())
-                .distinct()
-                .sorted()
-                .collect(Collectors.toList());
-    }
-
-    // ========== 新增文章管理方法 ==========
+    // ========== 文章管理方法（增强权限校验） ==========
 
     /**
      * 创建文章
@@ -172,7 +291,7 @@ public class ArticleService {
     }
 
     /**
-     * 更新文章
+     * 更新文章（增强权限校验）
      */
     public Article updateArticle(Long articleId, UpdateArticleRequest request, Long authorId) {
         // 使用 Repository 的权限验证方法
@@ -204,7 +323,7 @@ public class ArticleService {
     }
 
     /**
-     * 删除文章
+     * 删除文章（增强权限校验）
      */
     public void deleteArticle(Long articleId, Long authorId) {
         // 使用 Repository 的权限验证方法
@@ -215,20 +334,14 @@ public class ArticleService {
     }
 
     /**
-     * 获取文章详情
+     * 获取文章详情（兼容旧接口，默认只返回已发布文章）
      */
     public Article getArticleDetail(Long id) {
-        Article article = articleRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("文章不存在"));
-
-        article.incrementViewCount();
-        articleRepository.save(article);
-
-        return article;
+        return getPublishedArticleDetail(id); // 默认行为：只返回已发布文章
     }
 
     /**
-     * 获取用户文章列表（分页）
+     * 获取用户文章列表（分页，私有接口使用）
      */
     public Page<Article> getUserArticles(Long authorId, Integer status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
@@ -240,7 +353,7 @@ public class ArticleService {
     }
 
     /**
-     * 搜索文章
+     * 搜索文章（兼容旧接口）
      */
     public Page<Article> searchArticles(String keyword, Integer status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createTime").descending());
@@ -248,25 +361,24 @@ public class ArticleService {
     }
 
     /**
-     * 获取推荐文章
+     * 获取推荐文章（兼容旧接口）
      */
     public List<Article> getRecommendedArticles() {
-        return articleRepository.findByIsRecommendedTrueAndStatusOrderByCreateTimeDesc(1);
+        return getPublishedRecommendedArticles(); // 默认只返回已发布的推荐文章
     }
 
     /**
-     * 获取置顶文章
+     * 获取置顶文章（兼容旧接口）
      */
     public List<Article> getTopArticles() {
-        return articleRepository.findByIsTopTrueAndStatusOrderByCreateTimeDesc(1);
+        return getPublishedTopArticles(); // 默认只返回已发布的置顶文章
     }
 
     /**
-     * 获取热门文章（分页）
+     * 获取热门文章（分页，兼容旧接口）
      */
     public Page<Article> getPopularArticles(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return articleRepository.findByStatusOrderByViewCountDesc(1, pageable);
+        return getPublishedPopularArticles(page, size); // 默认只返回已发布的热门文章
     }
 
     /**
@@ -275,7 +387,7 @@ public class ArticleService {
     public void likeArticle(Long articleId) {
         Article article = articleRepository.findById(articleId)
                 .orElseThrow(() -> new RuntimeException("文章不存在"));
-        article.incrementLikeCount();
+        article.incrementViewCount();
         articleRepository.save(article);
     }
 

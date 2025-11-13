@@ -29,23 +29,39 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         System.out.println("=== 注册JWT拦截器 ===");
 
-        // 使用更精确的拦截配置
         registry.addInterceptor(jwtInterceptor)
                 .addPathPatterns("/api/**")  // 只拦截API路径
                 .excludePathPatterns(
-                        "/api/users/login",      // 登录接口
-                        "/api/users/register",   // 注册接口
-                        "/api/users/check-username/**",  // 用户名检查
-                        "/api/users/check-email/**",     // 邮箱检查
-                        "/api/public/**",        // 公开接口
-                        "/error",                // 错误页面
-                        "/swagger-ui/**",        // Swagger UI
-                        "/v3/api-docs/**"        // API文档
+                        // 用户认证相关
+                        "/api/users/login",
+                        "/api/users/register",
+                        "/api/users/check-username/**",
+                        "/api/users/check-email/**",
+
+                        // 文章公开查询接口
+                        "/api/articles/tags",
+                        "/api/articles/tags/**",
+                        "/api/articles/categories",
+                        "/api/articles/tag/**",
+                        "/api/articles/category/**",
+                        "/api/articles/count/**",
+                        "/api/articles/search",
+                        "/api/articles/recommended",
+                        "/api/articles/top",
+                        "/api/articles/popular",
+                        "/api/articles/{id}",  // 文章详情
+
+                        // 其他公开接口
+                        "/api/public/**",
+                        "/api/comments/article/**",  // 文章评论查询
+                        "/error",
+                        "/swagger-ui/**",
+                        "/v3/api-docs/**"
                 );
 
         System.out.println("JWT拦截器注册完成");
         System.out.println("拦截路径: /api/**");
-        System.out.println("排除路径: 登录、注册、检查接口等公开接口");
+        System.out.println("排除路径: 登录、注册、文章查询等公开接口");
     }
 
     @Override
